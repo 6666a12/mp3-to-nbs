@@ -1,0 +1,8 @@
+[env]
+# Fix MinGW linker trying to create temp files in C:\WINDOWS
+TMPDIR = { value = "", relative = false }
+
+[target.x86_64-pc-windows-gnu]
+rustflags = [
+  "-C", "link-arg=-L/e/msys2/ucrt64/lib"
+]

@@ -1,0 +1,67 @@
+WARNING: Cache entry deserialization failed, entry ignored
+Collecting pynbs
+  Using cached pynbs-1.1.0-py3-none-any.whl.metadata (8.7 kB)
+WARNING: Cache entry deserialization failed, entry ignored
+Collecting music21
+  Using cached music21-10.3.0-py3-none-any.whl.metadata (6.5 kB)
+Collecting chardet (from music21)
+  Downloading chardet-7.4.3-py3-none-any.whl.metadata (9.4 kB)
+Collecting joblib (from music21)
+  Downloading joblib-1.5.3-py3-none-any.whl.metadata (5.5 kB)
+Collecting jsonpickle (from music21)
+  Downloading jsonpickle-4.1.2-py3-none-any.whl.metadata (8.1 kB)
+Collecting matplotlib (from music21)
+  Downloading matplotlib-3.10.9.tar.gz (34.8 MB)
+     ---------------------------------------- 34.8/34.8 MB 3.1 MB/s  0:00:11
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting more-itertools (from music21)
+  Downloading more_itertools-11.1.0-py3-none-any.whl.metadata (41 kB)
+Requirement already satisfied: numpy>=1.26.4 in e:/msys2/ucrt64/lib/python3.14/site-packages (from music21) (2.4.5)
+Collecting requests (from music21)
+  Downloading requests-2.34.2-py3-none-any.whl.metadata (4.8 kB)
+Collecting webcolors>=1.5 (from music21)
+  Downloading webcolors-25.10.0-py3-none-any.whl.metadata (2.2 kB)
+Collecting contourpy>=1.0.1 (from matplotlib->music21)
+  Downloading contourpy-1.3.3.tar.gz (13.5 MB)
+     ---------------------------------------- 13.5/13.5 MB 3.5 MB/s  0:00:03
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'error'
+  error: subprocess-exited-with-error
+  
+  Preparing metadata (pyproject.toml) did not run successfully.
+  exit code: 1
+  
+  [10 lines of output]
+  + meson setup C:/Users/fzm12/AppData/Local/Temp/claude/pip-install-81zorvgl/contourpy_2d8679d2b7a546ed84a1ff1d96d150ee C:/Users/fzm12/AppData/Local/Temp/claude/pip-install-81zorvgl/contourpy_2d8679d2b7a546ed84a1ff1d96d150ee/.mesonpy-z6rvud1b -Dbuildtype=release -Db_ndebug=if-release -Db_vscrt=md --vsenv --native-file=C:/Users/fzm12/AppData/Local/Temp/claude/pip-install-81zorvgl/contourpy_2d8679d2b7a546ed84a1ff1d96d150ee/.mesonpy-z6rvud1b/meson-python-native-file.ini
+  The Meson build system
+  Version: 1.11.1
+  Source dir: C:/Users/fzm12/AppData/Local/Temp/claude/pip-install-81zorvgl/contourpy_2d8679d2b7a546ed84a1ff1d96d150ee
+  Build dir: C:/Users/fzm12/AppData/Local/Temp/claude/pip-install-81zorvgl/contourpy_2d8679d2b7a546ed84a1ff1d96d150ee/.mesonpy-z6rvud1b
+  Build type: native build
+  
+  ../meson.build:1:0: ERROR: Could not find C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe
+  
+  A full log can be found at C:/Users/fzm12/AppData/Local/Temp/claude/pip-install-81zorvgl/contourpy_2d8679d2b7a546ed84a1ff1d96d150ee/.mesonpy-z6rvud1b/meson-logs/meson-log.txt
+  [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+
+[notice] A new release of pip is available: 25.3 -> 26.1.1
+[notice] To update, run: D:/minecraft-music-trans/new project/mp3-to-nbs/.venv/bin/python.exe -m pip install --upgrade pip
+error: metadata-generation-failed
+
+Encountered error while generating package metadata.
+
+contourpy
+
+note: This is an issue with the package mentioned above, not pip.
+hint: See above for details.

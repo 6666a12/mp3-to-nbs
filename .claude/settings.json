@@ -1,0 +1,17 @@
+{
+  "autoCompactEnabled": true,
+  "autoCompactWindow": 750000,
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "你正在压缩对话上下文。请严格遵循以下保留策略：\n\n**必须保留（高优先级）：**\n1. 项目架构认知：技术栈（Tauri 2.x + React 19 + TypeScript + Tailwind CSS + shadcn/ui 前端，Rust 后端，Python 3.11 音频引擎）、目录结构、模块职责、数据流（用户→React→Tauri Command→Python子进程→stdout JSON进度→Event→React UI）\n2. 现有进度：哪些文件已完成、哪些待完成、当前阻塞项、已解决的问题\n3. 关键设计决策：音源分离策略C、Basic Pitch音高检测、乐器映射规则、NBS→.nbt导出布局\n4. 环境状态：Python 3.11 venv路径、npm依赖已安装、cargo check通过但build需MSVC\n\n**必须丢弃（低优先级）：**\n1. 编译/安装的详细日志输出\n2. 探索性命令的原始输出（ls、find、grep结果）\n3. 已修复问题的中间调试过程\n4. 重复的验证步骤\n\n请输出一个简洁的压缩摘要。"
+          }
+        ]
+      }
+    ]
+  }
+}
