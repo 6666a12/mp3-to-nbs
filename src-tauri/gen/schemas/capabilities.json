@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capabilities for the MP3-to-NBS Converter","local":true,"windows":["main"],"permissions":["core:default","dialog:default","fs:default"]}}
+{"default":{"identifier":"default","description":"Default capabilities for the MP3-to-NBS Converter","local":true,"windows":["main"],"permissions":["core:default","dialog:default","fs:default","fs:allow-copy-file"]}}

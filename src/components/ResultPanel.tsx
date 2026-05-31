@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  CheckCircle2, Save, FolderOpen, FileOutput, Copy, Check,
+  CheckCircle2, Save, FolderOpen, FileOutput, Copy, Check, AlertCircle,
   Music, Clock, Layers, Gauge,
 } from 'lucide-react';
 import {
@@ -10,8 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { TRANSLATIONS } from '@/i18n/translations';
-import { selectSaveLocation, showInFolder, copyFile } from '@/lib/tauri';
-import type { ConversionResult, NbtExportConfig } from '@/types/conversion';
+import { selectSaveLocation, showInFolder, copyFile, isTauri } from '@/lib/tauri';
+import type { ConversionResult } from '@/types/conversion';
 
 interface ResultPanelProps {
   result: ConversionResult;
@@ -23,16 +23,18 @@ export function ResultPanel({ result, onExportNbt, onReset }: ResultPanelProps) 
   const { tl } = useLanguage();
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
       const savePath = await selectSaveLocation(result.nbs_file_name);
-      if (savePath) {
-        await copyFile(result.output_path, savePath);
-      }
+      if (!savePath) return; // user cancelled
+      await copyFile(result.output_path, savePath);
     } catch (e) {
-      console.error('Save failed:', e);
+      const msg = e instanceof Error ? e.message : String(e);
+      setSaveError(msg);
     } finally {
       setSaving(false);
     }
@@ -42,7 +44,8 @@ export function ResultPanel({ result, onExportNbt, onReset }: ResultPanelProps) 
     try {
       await showInFolder(result.output_path);
     } catch (e) {
-      console.error('Show in folder failed:', e);
+      const msg = e instanceof Error ? e.message : String(e);
+      setSaveError(msg);
     }
   };
 
@@ -52,7 +55,7 @@ export function ResultPanel({ result, onExportNbt, onReset }: ResultPanelProps) 
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      /* clipboard may not be available in some webviews */
+      setSaveError('Clipboard not available');
     }
   };
 
@@ -90,6 +93,14 @@ export function ResultPanel({ result, onExportNbt, onReset }: ResultPanelProps) 
           ))}
         </div>
         <Separator />
+
+        {/* Error feedback for save/show/copy failures */}
+        {saveError && (
+          <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs">
+            <AlertCircle className="h-3.5 w-3.5 text-red-500 mt-0.5 shrink-0" />
+            <span className="text-red-700">{saveError}</span>
+          </div>
+        )}
       </CardContent>
 
       <CardFooter className="flex flex-wrap gap-2">

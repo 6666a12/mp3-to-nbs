@@ -73,7 +73,7 @@ export function ProgressPanel({ progress }: ProgressPanelProps) {
                     isPending && 'text-muted-foreground/50'
                   )}
                 >
-                  {isCompleted ? (
+                  {isCompleted || (isActive && key === 'complete') ? (
                     <Check className="h-4 w-4 text-green-500 shrink-0" />
                   ) : isActive ? (
                     <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />

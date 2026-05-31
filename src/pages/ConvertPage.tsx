@@ -121,8 +121,8 @@ export function ConvertPage({ envStatus, onViewChange, conversion }: ConvertPage
           : tl(TRANSLATIONS.convert.startButton)}
       </Button>
 
-      {/* Progress panel */}
-      {(state === 'running' || progress) && (
+      {/* Progress panel — only shown while running, hidden after completion */}
+      {state === 'running' && (
         <ProgressPanel progress={progress} />
       )}
 

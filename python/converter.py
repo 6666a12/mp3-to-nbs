@@ -112,8 +112,16 @@ async def run_conversion(
             "source_separation", 0.05, "Running source separation (Phase 1: coarse)..."
         )
 
+        # Map quality preset to refinement threshold.
+        # Higher threshold → more stems get re-refined → better purity but slower.
+        quality_thresholds = {"fast": 0.70, "balanced": 0.82, "high": 0.92}
+        refine_threshold = quality_thresholds.get(options.quality, 0.82)
+
         with tempfile.TemporaryDirectory() as temp_dir:
-            separator = CascadedSourceSeparator(temp_dir=temp_dir)
+            separator = CascadedSourceSeparator(
+                temp_dir=temp_dir,
+                refinement_threshold=refine_threshold,
+            )
             stems = await separator.separate(input_path)
 
         report_progress(
