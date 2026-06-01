@@ -15,6 +15,12 @@ export type ConversionState =
   | 'completed'
   | 'error';
 
+/** A single log entry with timestamp */
+export interface LogEntry {
+  time: string;
+  text: string;
+}
+
 interface UseConversionReturn {
   /** Current lifecycle state */
   state: ConversionState;
@@ -30,6 +36,8 @@ interface UseConversionReturn {
   result: ConversionResult | null;
   /** Error message if the conversion or selection fails */
   error: string | null;
+  /** Detailed progress log lines */
+  logLines: LogEntry[];
   /** Open the file picker and populate `selectedFile` */
   selectFile: () => Promise<void>;
   /** Set the file path directly (e.g., from drag-and-drop event) */
@@ -42,10 +50,16 @@ interface UseConversionReturn {
   reset: () => void;
 }
 
+function readDefaultGpu(): boolean {
+  try { return localStorage.getItem('mp3-to-nbs-use-gpu') === 'true'; }
+  catch { return false; }
+}
+
 const DEFAULT_OPTIONS: ConversionOptions = {
   inputPath: '',
   sourceSeparation: true,
   quality: 'balanced',
+  useGpu: readDefaultGpu(),
 };
 
 export function useConversion(): UseConversionReturn {
@@ -55,6 +69,7 @@ export function useConversion(): UseConversionReturn {
   const [progress, setProgress] = useState<ProgressUpdate | null>(null);
   const [result, setResult] = useState<ConversionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [logLines, setLogLines] = useState<LogEntry[]>([]);
 
   // Abort controller ref for potential future cancellation
   const abortRef = useRef(false);
@@ -114,11 +129,21 @@ export function useConversion(): UseConversionReturn {
     setProgress(null);
     setResult(null);
     setError(null);
+    setLogLines([]);
+
+    const addLog = (text: string) => {
+      const now = new Date();
+      const time = now.toLocaleTimeString('zh-CN', { hour12: false });
+      setLogLines((prev) => [...prev, { time, text }]);
+    };
 
     try {
       const conversionResult = await runLocalConversion(options, (update) => {
         if (!abortRef.current) {
           setProgress(update);
+          if (update.message) {
+            addLog(update.message);
+          }
         }
       });
 
@@ -153,6 +178,7 @@ export function useConversion(): UseConversionReturn {
     progress,
     result,
     error,
+    logLines,
     selectFile,
     setFileDirectly,
     clearSelection,

@@ -55,15 +55,36 @@ impl PythonRunner {
         script_path: &Path,
         args: &[String],
     ) -> io::Result<Child> {
-        Command::new(&self.python_path)
-            .arg(script_path)
+        let mut cmd = Command::new(&self.python_path);
+        cmd.arg(script_path)
             .args(args)
             // Use legacy decoders to avoid torchcodec/FFmpeg DLL dependency
             .env("TORCHAUDIO_USE_LEGACY_DECODERS", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+
+        // On Windows, redirect TEMP/TMP to a directory on the same drive as the
+        // project to avoid issues when C: is full (ffprobe/ffmpeg/pip all need
+        // temporary file space).
+        #[cfg(target_os = "windows")]
+        {
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+            // Compute a project-local temp dir on the same drive as scripts_dir
+            let local_tmp = self.scripts_dir
+                .parent()
+                .unwrap_or(&self.scripts_dir)
+                .join("tmp");
+            // Best-effort: create and set env vars
+            let _ = std::fs::create_dir_all(&local_tmp);
+            let tmp_str = local_tmp.to_string_lossy().to_string();
+            cmd.env("TMP", &tmp_str)
+                .env("TEMP", &tmp_str)
+                .env("TMPDIR", &tmp_str);
+        }
+
+        cmd.spawn()
     }
 
     /// Read progress lines from the child's stdout.

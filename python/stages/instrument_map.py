@@ -189,6 +189,8 @@ def stem_to_instrument(stem_name: str, midi_program: int = 0) -> int:
         "vocals": 6,   # Flute (breath quality closest to voice)
         "drums": 2,    # Bass Drum (default, individual drum notes use drum map)
         "bass": 1,     # Double Bass (always)
+        "piano": 0,    # Harp (closest to piano timbre)
+        "guitar": 5,   # Guitar
         "other": midi_program_to_nbs_instrument(midi_program),
     }
     return mapping.get(stem_name, 0)
@@ -206,6 +208,8 @@ def stem_to_layer(stem_name: str) -> int:
     layer_map: Dict[str, int] = {
         "drums": 0,
         "bass": 1,
+        "piano": 2,
+        "guitar": 2,
         "other": 2,
         "vocals": 3,
     }

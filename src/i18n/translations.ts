@@ -87,6 +87,17 @@ export const TRANSLATIONS = {
         en: 'Separate audio into drums, bass, vocals, and other stems before analysis. Improves instrument mapping accuracy but takes longer.',
       },
     },
+    gpu: {
+      label: { zh: 'GPU 加速', en: 'GPU Acceleration' },
+      description: {
+        zh: '使用 GPU 运行 Demucs 音源分离，速度可提升 5-10 倍。需要 NVIDIA GPU 并安装 CUDA 版 PyTorch。',
+        en: 'Use GPU to run Demucs source separation — 5-10× faster. Requires an NVIDIA GPU with CUDA-enabled PyTorch.',
+      },
+      warning: {
+        zh: '⚠️ 警告：如果显卡配置不足（显存 < 4GB 或非 NVIDIA 显卡），GPU 加速可能导致程序崩溃或运行失败。不确定的话请保持关闭。',
+        en: '⚠️ Warning: GPU acceleration may crash or fail if your GPU is insufficient (< 4GB VRAM or non-NVIDIA GPU). Leave off if unsure.',
+      },
+    },
     quality: {
       label: { zh: '质量', en: 'Quality' },
       fast: {
@@ -107,6 +118,7 @@ export const TRANSLATIONS = {
   // ---- ProgressPanel ------------------------------------------------------
   progress: {
     converting: { zh: '转换中...', en: 'Converting...' },
+    log: { zh: '处理日志', en: 'Processing Log' },
     steps: {
       loading: { zh: '加载音频', en: 'Loading Audio' },
       source_separation: { zh: '音源分离', en: 'Source Separation' },
@@ -239,6 +251,22 @@ export const TRANSLATIONS = {
       recheck: { zh: '重新检测', en: 'Recheck' },
       downloadPython: { zh: '下载 Python', en: 'Download Python' },
       installDeps: { zh: '安装缺失依赖', en: 'Install Missing Dependencies' },
+    },
+    conversion: {
+      title: { zh: '转换默认值', en: 'Conversion Defaults' },
+      description: {
+        zh: '控制转换流水线的默认行为。这些设置可在转换页面按需覆盖。',
+        en: 'Default conversion pipeline behaviour. These can be overridden per-conversion on the Convert page.',
+      },
+      gpuLabel: { zh: 'GPU 加速 (CUDA)', en: 'GPU Acceleration (CUDA)' },
+      gpuDesc: {
+        zh: '使用 NVIDIA GPU 运行 Demucs，速度可提升 5-10 倍。需安装 CUDA 版 PyTorch。',
+        en: 'Use NVIDIA GPU to run Demucs — 5-10× faster. Requires CUDA-enabled PyTorch.',
+      },
+      gpuWarning: {
+        zh: '⚠️ 显卡配置不足（显存 < 4GB 或非 NVIDIA）可能导致崩溃。不确定请关闭。',
+        en: '⚠️ May crash if GPU is insufficient (< 4GB VRAM or non-NVIDIA). Leave off if unsure.',
+      },
     },
     export: {
       title: { zh: '导出配置', en: 'Export Configuration' },

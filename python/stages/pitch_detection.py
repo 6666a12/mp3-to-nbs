@@ -18,12 +18,72 @@ from scipy.io import wavfile
 from models.task_result import NoteEvent
 
 
+def _apply_noise_gate(
+    audio: np.ndarray,
+    sample_rate: int,
+    threshold_db: float = -30.0,
+    fade_ms: float = 5.0,
+) -> np.ndarray:
+    """Suppress low-level background noise before pitch detection.
+
+    Silences audio segments whose local RMS is more than *threshold_db*
+    below the track's peak RMS.  A short linear crossfade avoids clicks
+    at gate transitions.
+
+    Parameters
+    ----------
+    audio : np.ndarray
+        Mono float32 waveform.
+    sample_rate : int
+        Sample rate in Hz.
+    threshold_db : float
+        RMS threshold relative to peak (e.g. -30 dB).
+    fade_ms : float
+        Crossfade duration in ms (default 5).
+
+    Returns
+    -------
+    np.ndarray
+        Gated waveform (same shape / dtype as input).
+    """
+    if audio.size == 0:
+        return audio
+
+    import librosa
+
+    # Local RMS per ~46 ms frame (2048 samples @ 44.1k), 512-sample hop
+    rms = librosa.feature.rms(y=audio, frame_length=2048, hop_length=512)[0]
+    rms_max: float = float(rms.max())
+    if rms_max < 1e-10:
+        return audio
+
+    threshold_linear = rms_max * (10.0 ** (threshold_db / 20.0))
+
+    # Frame-level binary gate
+    gate = np.where(rms >= threshold_linear, 1.0, 0.0).astype(np.float32)
+
+    # Expand to sample resolution
+    sample_gate = np.repeat(gate, 512)[:audio.shape[0]]
+
+    # Short linear crossfade to prevent clicks
+    fade_samples = int(sample_rate * fade_ms / 1000.0)
+    if fade_samples > 1:
+        from scipy.ndimage import uniform_filter1d
+        sample_gate = uniform_filter1d(sample_gate, size=fade_samples * 2 + 1)
+        sample_gate = np.clip(sample_gate, 0.0, 1.0)
+
+    return (audio * sample_gate).astype(audio.dtype, copy=False)
+
+
 async def detect_pitches(
     audio: np.ndarray,
     sample_rate: int = 44100,
-    onset_threshold: float = 0.5,
-    frame_threshold: float = 0.3,
-    min_note_length_ms: float = 50.0,
+    onset_threshold: float = 0.6,
+    frame_threshold: float = 0.4,
+    min_note_length_ms: float = 120.0,
+    minimum_frequency: float = 120.0,
+    maximum_frequency: float = 4000.0,
+    noise_gate_db: float | None = -30.0,
     melodia_trick: bool = True,
     multiple_pitch_bends: bool = True,
 ) -> List[NoteEvent]:
@@ -36,11 +96,18 @@ async def detect_pitches(
     sample_rate : int
         Sample rate of the audio (default 44100).
     onset_threshold : float
-        Onset detection sensitivity (default 0.5).
+        Onset detection sensitivity (higher = fewer onsets, default 0.6).
     frame_threshold : float
-        Frame-level detection threshold (default 0.3).
+        Frame-level activation threshold (higher = fewer frames, default 0.4).
     min_note_length_ms : float
-        Minimum note length in milliseconds (default 50).
+        Minimum note length in milliseconds (default 120, range 80-150).
+    minimum_frequency : float
+        Lowest frequency in Hz that Basic Pitch will track (default 120).
+    maximum_frequency : float
+        Highest frequency in Hz that Basic Pitch will track (default 4000).
+    noise_gate_db : float or None
+        Noise-gate threshold in dB relative to peak RMS.  ``None`` disables
+        the gate.  Default ``-30`` silences segments 30 dB below peak.
     melodia_trick : bool
         Apply Melodia-style harmonic filtering to reduce false positives.
     multiple_pitch_bends : bool
@@ -57,6 +124,10 @@ async def detect_pitches(
     if audio.size == 0 or np.max(np.abs(audio)) < 1e-10:
         return []
 
+    # ---- Pre-processing: noise gate ----------------------------------------
+    if noise_gate_db is not None:
+        audio = _apply_noise_gate(audio, sample_rate, threshold_db=noise_gate_db)
+
     try:
         from basic_pitch.inference import predict
 
@@ -70,8 +141,8 @@ async def detect_pitches(
             onset_threshold=onset_threshold,
             frame_threshold=frame_threshold,
             minimum_note_length=min_note_length_ms / 1000.0,  # seconds
-            minimum_frequency=30.0,
-            maximum_frequency=4000.0,
+            minimum_frequency=minimum_frequency,
+            maximum_frequency=maximum_frequency,
             melodia_trick=melodia_trick,
             multiple_pitch_bends=multiple_pitch_bends,
         )
@@ -124,9 +195,12 @@ async def detect_pitches(
 
 async def detect_pitches_from_file(
     file_path: str | Path,
-    onset_threshold: float = 0.5,
-    frame_threshold: float = 0.3,
-    min_note_length_ms: float = 50.0,
+    onset_threshold: float = 0.6,
+    frame_threshold: float = 0.4,
+    min_note_length_ms: float = 120.0,
+    minimum_frequency: float = 120.0,
+    maximum_frequency: float = 4000.0,
+    noise_gate_db: float | None = -30.0,
     melodia_trick: bool = True,
     multiple_pitch_bends: bool = True,
 ) -> List[NoteEvent]:
@@ -146,6 +220,9 @@ async def detect_pitches_from_file(
         onset_threshold=onset_threshold,
         frame_threshold=frame_threshold,
         min_note_length_ms=min_note_length_ms,
+        minimum_frequency=minimum_frequency,
+        maximum_frequency=maximum_frequency,
+        noise_gate_db=noise_gate_db,
         melodia_trick=melodia_trick,
         multiple_pitch_bends=multiple_pitch_bends,
     )

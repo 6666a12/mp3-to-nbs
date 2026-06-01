@@ -15,6 +15,44 @@ import torchaudio
 from scipy.io import wavfile
 
 
+# ── Monkey-patch torchaudio.load BEFORE any demucs import ──────────────────
+# torchaudio 2.11+ requires torchcodec (often missing on Windows).
+# Fall back to librosa which already handles MP3/WAV/FLAC via audioread/ffmpeg.
+_original_ta_load = torchaudio.load
+
+
+def _patched_ta_load(
+    uri,
+    frame_offset=0,
+    num_frames=-1,
+    normalize=True,
+    channels_first=True,
+    **kwargs,
+):
+    """Drop-in replacement using librosa (avoids torchcodec dependency)."""
+    import librosa
+
+    # librosa natively resamples to 22050; get the native sr instead
+    audio_np, sr = librosa.load(
+        str(uri),
+        sr=None,  # keep native sample rate
+        mono=False,  # preserve channels
+        offset=frame_offset / 44100.0 if frame_offset else 0.0,
+        duration=(num_frames / 44100.0) if num_frames > 0 else None,
+    )
+    # librosa returns [samples] for mono, [channels, samples] for stereo
+    if audio_np.ndim == 1:
+        audio_np = audio_np[np.newaxis, :]  # [1, samples]
+    # Convert to torch tensor
+    waveform = torch.from_numpy(audio_np.astype(np.float32))
+    if not channels_first:
+        waveform = waveform.T  # [samples, channels]
+    return waveform, int(sr)
+
+
+torchaudio.load = _patched_ta_load
+
+
 # ── Monkey-patch torchaudio.save BEFORE any demucs import ──────────────────
 _original_ta_save = torchaudio.save
 
@@ -58,7 +96,6 @@ def _patched_ta_save(
     wavfile.write(str(uri), sample_rate, audio_scaled)
 
 
-# Apply the patch
 torchaudio.save = _patched_ta_save
 
 

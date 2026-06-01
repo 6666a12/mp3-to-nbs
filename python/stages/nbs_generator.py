@@ -76,20 +76,8 @@ async def generate_nbs(
         full_description += f"\nOriginal: {original_author}"
     full_description += "\nMod: 6-Octave Note Blocks (Noteblocks++)"
 
-    # Build layers
+    # Layers are built after polyphony resolution (see overflow section below).
     layers: List[pynbs.Layer] = []
-    max_layer = max(notes_by_layer.keys()) if notes_by_layer else 0
-    for layer_id in range(max_layer + 1):
-        layer_name = LAYER_NAMES.get(layer_id, f"Layer {layer_id}")
-        layers.append(
-            pynbs.Layer(
-                id=layer_id,
-                name=layer_name,
-                lock=False,
-                volume=100,
-                panning=0,
-            )
-        )
 
     # Build notes
     notes: List[pynbs.Note] = []
@@ -124,6 +112,80 @@ async def generate_nbs(
             if tick > max_tick:
                 max_tick = tick
 
+    # ---- Save original stem family on each note before sorting ----------
+    FAMILY_MAP = {0: "Drums", 1: "Bass", 2: "Harmony", 3: "Melody"}
+    for n in notes:
+        n._family = FAMILY_MAP.get(n.layer, f"Stem{n.layer}")
+
+    # Sort notes by tick (then layer) — REQUIRED by NBS jump-encoding format.
+    notes.sort(key=lambda n: (n.tick, n.layer))
+
+    # ---- Resolve polyphony via stem-family overflow slots -----------------
+    # NBS allows one note per layer per tick.  Overlapping legato tiles
+    # produce multiple notes at the same (tick, layer).  We assign each note
+    # a "slot" within its stem family (0 = base, 1+ = overflow).
+    occupied: set = set()         # (tick, family, slot)
+    family_max_slot: dict = {}    # family_name → highest slot used
+    overflow_added = 0
+
+    for n in notes:
+        family = n._family
+        slot = 0
+        while (n.tick, family, slot) in occupied:
+            slot += 1
+        occupied.add((n.tick, family, slot))
+        family_max_slot[family] = max(family_max_slot.get(family, 0), slot)
+        n._slot = slot          # temporary: slot within family
+        if slot > 0:
+            overflow_added += 1
+
+    # ---- Build contiguous layer ID mapping per family --------------------
+    # Families are ordered: Drums, Bass, Harmony, Melody.  Within each
+    # family, layers are numbered sequentially (0 = base, 1+ = overflow).
+    # This keeps related layers adjacent in OpenNBS.
+    FAMILY_ORDER = ["Drums", "Bass", "Harmony", "Melody"]
+    family_start_lid: dict = {}   # family_name → first global layer ID
+    lid = 0
+    for family in FAMILY_ORDER:
+        family_start_lid[family] = lid
+        lid += family_max_slot.get(family, 0) + 1
+    total_layers = lid
+
+    # ---- Remap notes: (family, slot) → contiguous global layer ID -------
+    for n in notes:
+        start = family_start_lid[n._family]
+        n.layer = start + n._slot
+
+    # ---- Build final layers list with proper names -----------------------
+    layers.clear()
+    for family in FAMILY_ORDER:
+        start = family_start_lid[family]
+        count = family_max_slot.get(family, 0) + 1
+        for s in range(count):
+            lid = start + s
+            name = family if s == 0 else f"{family} {s + 1}"
+            layers.append(pynbs.Layer(
+                id=lid,
+                name=name,
+                lock=False,
+                volume=100,
+                panning=0,
+            ))
+
+    if overflow_added > 0:
+        print(json.dumps({
+            "step": "generating_nbs",
+            "progress": 0.87,
+            "message": (
+                f"Polyphony resolved: {overflow_added} overflow notes, "
+                f"{total_layers} layers ({', '.join(f'{f}×{family_max_slot.get(f,0)+1}' for f in FAMILY_ORDER)})"
+            ),
+        }), flush=True)
+
+    # Recalculate after overflow resolution
+    max_tick = max(n.tick for n in notes) if notes else 0
+    note_count = len(notes)
+
     # Create NBS file via new_file helper (pynbs 1.0.0-beta API)
     nbs_file = pynbs.new_file(
         song_name=song_name,
@@ -141,6 +203,10 @@ async def generate_nbs(
     nbs_file.layers = layers
     nbs_file.notes = notes
     nbs_file.update_header(version=5)
+
+    # Safety: clamp song_length to NBS SHORT range (0-65535)
+    if nbs_file.header.song_length > 65535:
+        nbs_file.header.song_length = 65535
 
     # Save to file
     nbs_file.save(str(output_path))

@@ -25,6 +25,10 @@ export function SettingsPage({ envStatus, onEnvUpdate }: SettingsPageProps) {
   const [installLog, setInstallLog] = useState<string[]>([]);
   const [nbtSpacing, setNbtSpacing] = useState(2);
   const [nbtDataVersion, setNbtDataVersion] = useState(3953);
+  const [gpuEnabled, setGpuEnabled] = useState(() => {
+    try { return localStorage.getItem('mp3-to-nbs-use-gpu') === 'true'; }
+    catch { return false; }
+  });
 
   const handleRecheck = useCallback(async () => {
     setRechecking(true);
@@ -146,6 +150,53 @@ export function SettingsPage({ envStatus, onEnvUpdate }: SettingsPageProps) {
             <div className="rounded-md bg-gray-50 p-3 font-mono text-xs max-h-32 overflow-y-auto">
               {installLog.map((line, i) => <div key={i} className="text-gray-700">{line}</div>)}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Conversion Defaults */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">{tl(TRANSLATIONS.settings.conversion.title)}</CardTitle>
+          <CardDescription>{tl(TRANSLATIONS.settings.conversion.description)}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* GPU toggle */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="text-sm">{tl(TRANSLATIONS.settings.conversion.gpuLabel)}</Label>
+              <p className="text-xs text-muted-foreground">
+                {tl(TRANSLATIONS.settings.conversion.gpuDesc)}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={gpuEnabled}
+              onClick={() => {
+                const next = !gpuEnabled;
+                setGpuEnabled(next);
+                try { localStorage.setItem('mp3-to-nbs-use-gpu', String(next)); } catch { /* ignore */ }
+              }}
+              className={`
+                relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center
+                rounded-full border-2 border-transparent transition-colors
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                focus-visible:ring-offset-2
+                ${gpuEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}
+              `}
+            >
+              <span className={`
+                pointer-events-none block h-3.5 w-3.5 rounded-full bg-white shadow-lg
+                ring-0 transition-transform
+                ${gpuEnabled ? 'translate-x-4' : 'translate-x-0.5'}
+              `} />
+            </button>
+          </div>
+          {gpuEnabled && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 rounded-md px-2.5 py-1.5">
+              {tl(TRANSLATIONS.settings.conversion.gpuWarning)}
+            </p>
           )}
         </CardContent>
       </Card>

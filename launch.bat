@@ -1,7 +1,8 @@
 @echo off
 REM ============================================================
-REM  MP3-to-NBS Converter — Development Launcher
-REM  Starts Vite dev server + Tauri app with correct environment
+REM  MP3-to-NBS Converter - Development Launcher
+REM  Builds frontend + Rust backend, then runs the app.
+REM  Uses dist/ directly (no Vite dev server needed).
 REM ============================================================
 
 setlocal
@@ -21,28 +22,29 @@ REM -- Navigate to project root ---------------------------------
 cd /d "%~dp0"
 
 echo ============================================================
-echo  Step 1/2: Building Rust backend...
+echo  MP3-to-NBS Converter
 echo ============================================================
-cd src-tauri
-cargo build
+
+echo.
+echo [1/2] Building frontend...
+call npm run build
 if %ERRORLEVEL% neq 0 (
-    echo ERROR: cargo build failed
+    echo ERROR: Frontend build failed
     pause
     exit /b 1
 )
-cd ..
 
 echo.
-echo ============================================================
-echo  Step 2/2: Starting Vite ^& Tauri...
-echo ============================================================
-echo  Vite  : http://localhost:1420
-echo  Tauri : GUI window will open shortly
-echo ============================================================
-
-start "Vite" cmd /c "npx vite --port 1420"
-timeout /t 3 /nobreak >nul
+echo [2/2] Building and launching Rust backend...
 cd src-tauri
 cargo run
 
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: Application exited with code %ERRORLEVEL%
+    cd ..
+    pause
+    exit /b 1
+)
+
+cd ..
 endlocal

@@ -73,6 +73,10 @@ class ConversionOptions(BaseModel):
         le=60.0,
         description="Ticks per second (0 = auto-detect from BPM)",
     )
+    use_gpu: bool = Field(
+        default=False,
+        description="Enable GPU acceleration for Demucs source separation (requires CUDA)",
+    )
 
 
 class ConversionResult(BaseModel):

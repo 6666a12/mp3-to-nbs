@@ -68,6 +68,7 @@ pub fn run() {
             commands::env::check_environment,
             commands::env::install_missing_packages,
             commands::convert::run_local_conversion,
+            commands::fs_util::copy_file,
             commands::fs_util::show_in_folder,
             commands::nbt_export::export_nbt,
         ])

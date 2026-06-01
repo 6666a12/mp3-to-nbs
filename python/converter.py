@@ -4,6 +4,14 @@ MP3-to-NBS Converter -- Main Entry Point.
 Called by the Rust backend via subprocess:
   python converter.py <input_audio> --output-dir <dir> [options]
 
+Pipeline order (optimized):
+  Step 1: Load audio
+  Step 2: Detect metadata (BPM, duration, key) EARLY — before expensive separation
+  Step 3: Source separation (optional, demucs)
+  Step 4: Beat tracking (uses BPM from step 2)
+  Step 5: Pitch detection per stem
+  Step 6: NBS generation
+
 Progress is reported as JSON lines on stdout (flush=True).
 On completion, a ConversionResult JSON is printed to stdout.
 On error, a {"error": "..."} JSON is printed to stderr.
@@ -29,20 +37,24 @@ from models.task_result import (
 )
 from utils.audio_loader import load_audio, load_audio_multichannel
 from utils.note_quantizer import midi_to_nbs_key
-from stages.beat_tracking import detect_tempo_and_beats
+from stages.beat_tracking import detect_tempo_and_beats, detect_audio_metadata
 from stages.pitch_detection import detect_pitches
 from stages.midi_processing import (
     process_notes_with_expression,
     process_drums_track,
 )
 from stages.instrument_map import (
-    stem_to_instrument,
     stem_to_layer,
     get_drum_instrument,
     get_instrument_name,
 )
 from stages.nbs_generator import generate_nbs
 from stages.source_separation import CascadedSourceSeparator
+from stages.timbre_classifier import (
+    NoteInstrument,
+    classify_notes_batch,
+    get_classification_stats,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -69,106 +81,112 @@ async def run_conversion(
     output_dir: str,
     options: ConversionOptions,
 ) -> ConversionResult:
-    """Run the full MP3-to-NBS conversion pipeline.
-
-    Parameters
-    ----------
-    input_path : str
-        Path to the input audio file.
-    output_dir : str
-        Directory where the output NBS file will be written.
-    options : ConversionOptions
-        Conversion parameters.
-
-    Returns
-    -------
-    ConversionResult
-        Metadata about the generated NBS file.
-    """
+    """Run the full MP3-to-NBS conversion pipeline."""
     input_path = Path(input_path)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     song_name = input_path.stem
-    audio_duration = 0.0
 
     # ==================================================================
     # Step 1: Load audio
     # ==================================================================
-    report_progress("loading", 0.0, "Loading audio file...")
+    report_progress("loading", 0.0, f"Loading audio: {input_path.name}")
 
     audio, sample_rate = await load_audio(input_path, target_sr=44100, mono=True)
     audio_duration = len(audio) / sample_rate
 
-    report_progress("loading", 0.05, f"Loaded {audio_duration:.1f}s of audio")
+    report_progress("loading", 0.03, f"Loaded: {audio_duration:.1f}s, {sample_rate}Hz")
 
     # ==================================================================
-    # Step 2: Source separation (optional)
+    # Step 2: Detect metadata EARLY (BPM, key, duration)
+    # ==================================================================
+    report_progress("loading", 0.05, "Detecting tempo and audio metadata...")
+
+    metadata = await detect_audio_metadata(audio, sample_rate)
+    tempo_bpm = metadata["bpm"]
+    tps = metadata["tps"]
+    # key detection removed
+
+    if options.tps > 0:
+        # User override
+        tps = options.tps
+        tempo_bpm = tps * 15.0
+
+    report_progress(
+        "loading", 0.08,
+        f"BPM: {tempo_bpm:.1f} | Duration: {audio_duration:.1f}s | TPS: {tps:.2f}",
+    )
+
+    # ==================================================================
+    # Step 3: Source separation (optional)
     # ==================================================================
     stems: Dict[str, np.ndarray] = {}
 
     if options.source_separation:
         report_progress(
-            "source_separation", 0.05, "Running source separation (Phase 1: coarse)..."
+            "source_separation", 0.10,
+            f"Source separation starting ({options.quality} quality)...",
         )
 
-        # Map quality preset to refinement threshold.
-        # Higher threshold → more stems get re-refined → better purity but slower.
-        quality_thresholds = {"fast": 0.70, "balanced": 0.82, "high": 0.92}
-        refine_threshold = quality_thresholds.get(options.quality, 0.82)
+        try:
+            quality_thresholds = {"fast": 0.50, "balanced": 0.55, "high": 0.60}
+            refine_threshold = quality_thresholds.get(options.quality, 0.82)
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            separator = CascadedSourceSeparator(
-                temp_dir=temp_dir,
-                refinement_threshold=refine_threshold,
+            with tempfile.TemporaryDirectory() as temp_dir:
+                separator = CascadedSourceSeparator(
+                    temp_dir=temp_dir,
+                    refinement_threshold=refine_threshold,
+                    use_gpu=options.use_gpu,
+                )
+                stems = await separator.separate(input_path)
+
+            stem_list = ", ".join(sorted(stems.keys()))
+            report_progress(
+                "source_separation", 0.25,
+                f"Separation complete: {len(stems)} stems ({stem_list})",
             )
-            stems = await separator.separate(input_path)
-
-        report_progress(
-            "source_separation",
-            0.20,
-            f"Source separation complete: {len(stems)} stems",
-        )
+        except Exception as e:
+            report_progress(
+                "source_separation", 0.25,
+                f"Source separation failed: {e}. Falling back to no separation.",
+            )
+            stems = {"other": audio}
     else:
-        # No source separation: treat whole audio as "other" stem
         stems = {"other": audio}
-        report_progress("loading", 0.10, "Skipping source separation (disabled)")
+        report_progress("loading", 0.10, "Source separation skipped (disabled)")
 
     # ==================================================================
-    # Step 3: Beat tracking (on the full mix)
+    # Step 4: Beat tracking
     # ==================================================================
-    report_progress("beat_tracking", 0.25, "Detecting tempo and beats...")
+    report_progress(
+        "beat_tracking", 0.28,
+        f"Beat tracking at {tempo_bpm:.1f} BPM...",
+    )
 
-    tps = options.tps
-    tempo_bpm = tps * 15.0  # default conversion
-
-    # Use the mix or 'other' stem for beat detection
     beat_audio = stems.get("other", audio)
     if beat_audio.size == 0:
         beat_audio = audio.copy()
 
-    tempo_bpm, detected_tps, beat_frames = await detect_tempo_and_beats(
+    final_bpm, final_tps, beat_frames = await detect_tempo_and_beats(
         beat_audio, sample_rate
     )
 
-    # Use detected TPS if user didn't override (tps=0 means auto-detect)
+    # Use detected BPM unless user overrode
     if options.tps <= 0:
-        tps = detected_tps
-    else:
-        # User-specified TPS takes precedence, but keep the detected BPM for metadata
-        pass
+        tps = final_tps
+        tempo_bpm = final_bpm
 
     report_progress(
-        "beat_tracking",
-        0.30,
-        f"Tempo: {tempo_bpm:.1f} BPM, TPS: {tps:.2f}",
+        "beat_tracking", 0.32,
+        f"Tempo confirmed: {tempo_bpm:.1f} BPM, TPS={tps:.2f}, {len(beat_frames)} beats",
     )
 
     # ==================================================================
-    # Step 4: Process each stem
+    # Step 5: Process each stem
     # ==================================================================
-    stem_names = ["drums", "bass", "other", "vocals"]
-    # Only process stems that exist
+    # Process order ensures drums → bass → harmony stems → melody
+    stem_names = ["drums", "bass", "piano", "guitar", "other", "vocals"]
     available_stems = [s for s in stem_names if s in stems and stems[s].size > 0]
 
     notes_by_layer: Dict[int, List[Dict[str, Any]]] = {0: [], 1: [], 2: [], 3: []}
@@ -176,77 +194,116 @@ async def run_conversion(
     stem_count = len(available_stems)
 
     for idx, stem_name in enumerate(available_stems):
-        base_progress = 0.30 + (idx / stem_count) * 0.55
+        base_progress = 0.32 + (idx / stem_count) * 0.50
         stem_audio = stems[stem_name]
         layer_id = stem_to_layer(stem_name)
 
+        layer_names = {0: "Drums", 1: "Bass", 2: "Harmony", 3: "Melody"}
+        layer_name = layer_names.get(layer_id, f"Layer {layer_id}")
+
         report_progress(
-            "pitch_detection",
-            base_progress,
-            f"Detecting pitches in {stem_name} stem...",
+            "pitch_detection", base_progress,
+            f"Processing {stem_name} → {layer_name} (layer {layer_id})...",
         )
 
-        # Pitch detection
+        # Stem-specific detection parameters:
+        #   Drums: short hits need permissive thresholds + low noise gate
+        #   Bass:  low register, medium sensitivity
+        #   Piano/Guitar: pitched instruments, moderate thresholds
+        #   Other/Vocals: pitched, tight thresholds to suppress noise
         if stem_name == "drums":
-            # Drums: use pitch detection but interpret results as rhythm events
             note_events = await detect_pitches(
                 stem_audio, sample_rate,
-                onset_threshold=0.4,  # slightly more sensitive for drums
-                frame_threshold=0.25,
+                onset_threshold=0.45,
+                frame_threshold=0.30,
+                min_note_length_ms=60.0,
+                minimum_frequency=60.0,
+                noise_gate_db=-25.0,
+            )
+        elif stem_name == "bass":
+            note_events = await detect_pitches(
+                stem_audio, sample_rate,
+                onset_threshold=0.50,
+                frame_threshold=0.35,
+                min_note_length_ms=80.0,
+                minimum_frequency=60.0,
+                noise_gate_db=-25.0,
+            )
+        elif stem_name in ("piano", "guitar"):
+            note_events = await detect_pitches(
+                stem_audio, sample_rate,
+                onset_threshold=0.60,
+                frame_threshold=0.45,
+                min_note_length_ms=120.0,
+                noise_gate_db=-30.0,
             )
         else:
-            note_events = await detect_pitches(stem_audio, sample_rate)
+            note_events = await detect_pitches(
+                stem_audio, sample_rate,
+                onset_threshold=0.70,
+                frame_threshold=0.50,
+                min_note_length_ms=180.0,
+            )
 
         if not note_events:
             report_progress(
-                "pitch_detection",
-                base_progress + 0.05,
-                f"No notes detected in {stem_name}, skipping",
+                "pitch_detection", base_progress + 0.03,
+                f"{stem_name}: no notes detected, skipping",
             )
             continue
 
-        # Determine instrument and process notes
+        # Process notes
         if stem_name == "drums":
-            # Drum-specific processing
             processed = await process_drums_track(
                 note_events=note_events,
                 track_audio=stem_audio,
                 instrument_map_fn=get_drum_instrument,
                 tps=tps,
             )
+            inst_name = "Drum Map"
         else:
-            instrument_id = stem_to_instrument(stem_name)
+            # Per-note timbre classification
+            note_instruments = await classify_notes_batch(
+                stem_audio, sample_rate, note_events, stem_name=stem_name,
+            )
             processed = await process_notes_with_expression(
                 note_events=note_events,
                 track_audio=stem_audio,
-                instrument_id=instrument_id,
+                note_instruments=note_instruments,
                 layer_id=layer_id,
                 tps=tps,
             )
-
-        # Collect notes
-        for note in processed:
-            notes_by_layer[layer_id].append(
-                {
-                    "tick": note.tick,
-                    "key": note.key,
-                    "instrument": note.instrument,
-                    "velocity": note.velocity,
-                }
+            # Build instrument usage summary
+            stats = get_classification_stats(note_instruments)
+            top3 = sorted(stats.items(), key=lambda x: -x[1])[:3]
+            inst_labels = ", ".join(
+                f"{get_instrument_name(inst)}×{cnt}" for inst, cnt in top3
             )
+            inst_name = f"({inst_labels})"
+
+        # Collect notes from this stem
+        for note in processed:
+            notes_by_layer[layer_id].append({
+                "tick": note.tick,
+                "key": note.key,
+                "instrument": note.instrument,
+                "velocity": note.velocity,
+            })
 
         total_notes += len(processed)
 
         report_progress(
-            "pitch_detection",
-            base_progress + 0.05,
-            f"Processed {stem_name}: {len(processed)} notes (inst={get_instrument_name(stem_to_instrument(stem_name))})",
+            "pitch_detection", base_progress + 0.05,
+            f"✓ {stem_name}: {len(processed)} notes → {layer_name} [{inst_name}]",
         )
 
     # ==================================================================
-    # Step 5: Generate NBS file
+    # Step 6: Generate NBS file
     # ==================================================================
-    report_progress("generating_nbs", 0.85, "Generating NBS file...")
+    report_progress(
+        "generating_nbs", 0.85,
+        f"Generating NBS: {total_notes} notes across layers...",
+    )
 
     output_path = output_dir / f"{song_name}.nbs"
     output_path_str, stats = await generate_nbs(
@@ -254,16 +311,24 @@ async def run_conversion(
         output_path=output_path,
         song_name=song_name,
         song_author="MP3-to-NBS Converter",
-        description=f"Converted from {input_path.name}\n"
-                    f"BPM: {tempo_bpm:.1f} (TPS: {tps:.2f})",
+        description=(
+            f"Converted from {input_path.name}\n"
+            f"BPM: {tempo_bpm:.1f} | TPS: {tps:.2f}\n"
+            f"Stems: {', '.join(sorted(stems.keys()))}"
+        ),
         tempo=tps,
     )
 
-    report_progress("complete", 1.0, f"Conversion complete: {stats['note_count']} notes")
+    # Final stats
+    nbs_size_kb = Path(output_path_str).stat().st_size / 1024
 
-    # ==================================================================
-    # Return result
-    # ==================================================================
+    report_progress(
+        "complete", 1.0,
+        f"Done! {stats['note_count']} notes, {stats['layer_count']} layers, "
+        f"BPM={tempo_bpm:.1f}, "
+        f"max_tick={stats['total_ticks']}, file={nbs_size_kb:.1f}KB",
+    )
+
     return ConversionResult(
         output_path=output_path_str,
         nbs_file_name=output_path.name,
@@ -282,9 +347,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Convert audio files (MP3/WAV/FLAC/etc.) to Minecraft NBS format.",
     )
-    parser.add_argument(
-        "input", type=str, help="Path to the input audio file."
-    )
+    parser.add_argument("input", type=str, help="Path to the input audio file.")
     parser.add_argument(
         "--output-dir", type=str, required=True,
         help="Directory for the output NBS file.",
@@ -301,7 +364,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--tps", type=float, default=0.0,
-        help="Ticks per second (0 = auto-detect from BPM, default: auto).",
+        help="Ticks per second (0 = auto-detect, default: auto).",
+    )
+    parser.add_argument(
+        "--use-gpu", action="store_true", default=False,
+        help="Enable GPU acceleration for Demucs source separation (requires CUDA).",
     )
     return parser
 
@@ -310,11 +377,11 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    # Build options from CLI args
     options = ConversionOptions(
         source_separation=args.source_separation == "true",
         quality=args.quality,
         tps=args.tps,
+        use_gpu=args.use_gpu,
     )
 
     try:
@@ -325,8 +392,6 @@ def main() -> None:
                 options=options,
             )
         )
-
-        # Output final result as JSON to stdout
         print(json.dumps(result.model_dump()), flush=True)
 
     except FileNotFoundError as e:

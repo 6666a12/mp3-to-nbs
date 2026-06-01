@@ -1,13 +1,16 @@
-import { Check, CheckCircle2, Loader2, Circle } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { Check, CheckCircle2, Loader2, Circle, Terminal } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { Card, CardContent } from '@/components/ui/card';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { TRANSLATIONS } from '@/i18n/translations';
 import { cn } from '@/lib/utils';
 import type { ProgressUpdate } from '@/types/conversion';
+import type { LogEntry } from '@/hooks/useConversion';
 
 interface ProgressPanelProps {
   progress: ProgressUpdate | null;
+  logLines: LogEntry[];
 }
 
 /** Pipeline step keys in display order, matching converter.py */
@@ -20,11 +23,17 @@ const STEP_KEYS = [
   'complete',
 ] as const;
 
-export function ProgressPanel({ progress }: ProgressPanelProps) {
+export function ProgressPanel({ progress, logLines }: ProgressPanelProps) {
   const { tl } = useLanguage();
+  const logEndRef = useRef<HTMLDivElement>(null);
   const currentStep = progress?.step ?? '';
   const pct = progress ? Math.round(progress.progress * 100) : 0;
   const currentStepIndex = STEP_KEYS.indexOf(currentStep as typeof STEP_KEYS[number]);
+
+  // Auto-scroll log to bottom when new lines arrive.
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logLines]);
 
   return (
     <Card>
@@ -49,11 +58,6 @@ export function ProgressPanel({ progress }: ProgressPanelProps) {
 
           {/* Progress bar */}
           <Progress value={pct} className="h-2.5" />
-
-          {/* Current step message */}
-          {progress?.message && (
-            <p className="text-xs text-muted-foreground">{progress.message}</p>
-          )}
 
           {/* Steps list */}
           <div className="space-y-1.5 pt-2">
@@ -85,6 +89,29 @@ export function ProgressPanel({ progress }: ProgressPanelProps) {
               );
             })}
           </div>
+
+          {/* Scrollable log area */}
+          {logLines.length > 0 && (
+            <div className="pt-2">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground font-medium">
+                  {tl(TRANSLATIONS.progress.log)}
+                </span>
+              </div>
+              <div className="rounded-md border bg-muted/30 p-3 max-h-48 overflow-y-auto font-mono text-xs leading-relaxed">
+                {logLines.map((entry, i) => (
+                  <div key={i} className="flex gap-2">
+                    <span className="text-muted-foreground shrink-0 select-none">
+                      [{entry.time}]
+                    </span>
+                    <span>{entry.text}</span>
+                  </div>
+                ))}
+                <div ref={logEndRef} />
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

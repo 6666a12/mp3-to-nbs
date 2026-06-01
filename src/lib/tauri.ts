@@ -1,7 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open, save } from '@tauri-apps/plugin-dialog';
-import { copyFile as fsCopyFile } from '@tauri-apps/plugin-fs';
 import type {
   EnvCheckResult,
   ConversionOptions,
@@ -63,6 +62,7 @@ export async function runLocalConversion(
       options: {
         source_separation: options.sourceSeparation,
         quality: options.quality,
+        use_gpu: options.useGpu,
       },
     });
     return result;
@@ -182,9 +182,9 @@ export async function onFileDrop(
 // Filesystem helpers
 // =============================================================================
 
-/** Copy a file from source to destination (wraps Tauri fs plugin). */
+/** Copy a file from source to destination (uses Rust std::fs::copy — no scope restrictions). */
 export async function copyFile(src: string, dst: string): Promise<void> {
-  await fsCopyFile(src, dst);
+  await invoke('copy_file', { src, dst });
 }
 
 /** Reveal a file/directory in the platform's file manager. */

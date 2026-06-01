@@ -1,4 +1,27 @@
+use std::path::PathBuf;
 use std::process::Command;
+
+/// Copy a file from src to dst using `std::fs::copy`.
+///
+/// This bypasses the Tauri fs plugin scope restrictions — unlike the
+/// `@tauri-apps/plugin-fs` `copyFile` function, there are no allow-list
+/// restrictions on which paths can be read/written.
+#[tauri::command]
+pub fn copy_file(src: String, dst: String) -> Result<(), String> {
+    let src_path = PathBuf::from(&src);
+    let dst_path = PathBuf::from(&dst);
+
+    // Ensure the parent directory exists.
+    if let Some(parent) = dst_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create destination directory: {}", e))?;
+    }
+
+    std::fs::copy(&src_path, &dst_path)
+        .map_err(|e| format!("Failed to copy file: {}", e))?;
+
+    Ok(())
+}
 
 /// Reveal the given file or directory in the platform's file manager.
 #[tauri::command]

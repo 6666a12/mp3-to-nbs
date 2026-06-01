@@ -7,7 +7,7 @@ import { ProgressPanel } from '@/components/ProgressPanel';
 import { ResultPanel } from '@/components/ResultPanel';
 import { Button } from '@/components/ui/button';
 import type { EnvCheckResult, ConversionOptions, ProgressUpdate, ConversionResult } from '@/types/conversion';
-import type { ConversionState } from '@/hooks/useConversion';
+import type { ConversionState, LogEntry } from '@/hooks/useConversion';
 
 interface ConvertPageProps {
   envStatus: EnvCheckResult | null;
@@ -20,6 +20,7 @@ interface ConvertPageProps {
     progress: ProgressUpdate | null;
     result: ConversionResult | null;
     error: string | null;
+    logLines: LogEntry[];
     selectFile: () => Promise<void>;
     setFileDirectly: (path: string) => void;
     clearSelection: () => void;
@@ -38,6 +39,7 @@ export function ConvertPage({ envStatus, onViewChange, conversion }: ConvertPage
     progress,
     result,
     error,
+    logLines,
     selectFile,
     setFileDirectly,
     clearSelection,
@@ -123,7 +125,7 @@ export function ConvertPage({ envStatus, onViewChange, conversion }: ConvertPage
 
       {/* Progress panel — only shown while running, hidden after completion */}
       {state === 'running' && (
-        <ProgressPanel progress={progress} />
+        <ProgressPanel progress={progress} logLines={logLines} />
       )}
 
       {/* Result panel */}

@@ -11,6 +11,8 @@ export interface ConversionOptions {
   inputPath: string;
   sourceSeparation: boolean;
   quality: 'fast' | 'balanced' | 'high';
+  /** Enable GPU acceleration for Demucs source separation (requires CUDA-compatible GPU). */
+  useGpu: boolean;
 }
 
 /** Final result returned from a completed conversion */

@@ -20,6 +20,7 @@ import librosa
 from scipy.ndimage import median_filter, gaussian_filter1d
 
 from models.task_result import NoteEvent
+from stages.timbre_classifier import NoteInstrument
 from utils.note_quantizer import (
     midi_to_nbs_key,
     quantize_time_to_tick,
@@ -156,13 +157,13 @@ class VelocityEnvelopeExtractor:
 async def process_notes_with_expression(
     note_events: List[NoteEvent],
     track_audio: np.ndarray,
-    instrument_id: int,
+    note_instruments: List[NoteInstrument],
     layer_id: int,
     tps: float = 10.0,
     enable_envelope_filter: bool = True,
     chord_window_ms: float = 50.0,
 ) -> List[QuantizedNote]:
-    """Full three-layer expressiveness pipeline.
+    """Full three-layer expressiveness pipeline with per-note timbre.
 
     Parameters
     ----------
@@ -170,8 +171,8 @@ async def process_notes_with_expression(
         Detected note events (Basic Pitch output).
     track_audio : np.ndarray
         Audio for this track (used for RMS envelope extraction).
-    instrument_id : int
-        NBS instrument ID (0-15).
+    note_instruments : List[NoteInstrument]
+        Per-note instrument assignment (same length as note_events).
     layer_id : int
         NBS layer ID (0=Drums, 1=Bass, 2=Harmony, 3=Melody).
     tps : float
@@ -185,9 +186,17 @@ async def process_notes_with_expression(
     -------
     List[QuantizedNote]
         All processed notes sorted by tick, then key.
+        Secondary instruments produce additional notes at same tick/key/layer
+        — the overflow resolver in nbs_generator handles layer assignment.
     """
     if not note_events:
         return []
+
+    if len(note_instruments) != len(note_events):
+        raise ValueError(
+            f"note_instruments length {len(note_instruments)} != "
+            f"note_events length {len(note_events)}"
+        )
 
     extractor = VelocityEnvelopeExtractor(
         sr=44100,
@@ -196,7 +205,7 @@ async def process_notes_with_expression(
 
     all_notes: List[QuantizedNote] = []
 
-    for note in note_events:
+    for i, note in enumerate(note_events):
         start_tick = quantize_time_floor(note.start_time, tps)
         end_tick = quantize_time_ceil(note.end_time, tps)
         # Ensure minimum 1-tick duration
@@ -212,20 +221,39 @@ async def process_notes_with_expression(
             tps=tps,
         )
 
-        # Legato tiling + velocity assignment
-        for i, tick in enumerate(range(start_tick, end_tick + 1)):
-            vel = velocities[i] if i < len(velocities) else 50
+        ni = note_instruments[i]
+
+        # Legato tiling + velocity assignment — primary instrument
+        for j, tick in enumerate(range(start_tick, end_tick + 1)):
+            vel = velocities[j] if j < len(velocities) else 50
 
             all_notes.append(
                 QuantizedNote(
                     tick=tick,
                     key=nbs_key,
                     velocity=vel,
-                    instrument=instrument_id,
+                    instrument=ni.primary,
                     layer=layer_id,
                     pitch=note.pitch,
                 )
             )
+
+        # Legato tiling — secondary instrument (if any)
+        if ni.secondary is not None:
+            for j, tick in enumerate(range(start_tick, end_tick + 1)):
+                vel = velocities[j] if j < len(velocities) else 50
+                sec_vel = max(1, int(vel * ni.secondary_vel_mult))
+
+                all_notes.append(
+                    QuantizedNote(
+                        tick=tick,
+                        key=nbs_key,
+                        velocity=sec_vel,
+                        instrument=ni.secondary,
+                        layer=layer_id,
+                        pitch=note.pitch,
+                    )
+                )
 
     # Sort by tick, then key
     all_notes.sort(key=lambda n: (n.tick, n.key))

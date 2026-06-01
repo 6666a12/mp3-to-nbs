@@ -13,6 +13,8 @@ use crate::{AppError, AppState};
 pub struct ConversionOptions {
     pub source_separation: bool,
     pub quality: String,
+    #[serde(default)]
+    pub use_gpu: bool,
 }
 
 /// Final conversion result returned to the frontend.
@@ -84,6 +86,9 @@ pub async fn run_local_conversion(
     args.push(options.source_separation.to_string());
     args.push("--quality".to_string());
     args.push(options.quality.clone());
+    if options.use_gpu {
+        args.push("--use-gpu".to_string());
+    }
 
     // ---- 4. Spawn the Python child process --------------------------------
     let mut child = runner
