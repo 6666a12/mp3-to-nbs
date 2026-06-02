@@ -4,7 +4,7 @@
 
 I've provided GPU speed up for demucs now.
 
-And I have ultilized the bpm caculate using fft, now it's more accurate at a fixed bpm.
+And I have ultilized the bpm calculate using fft, now it's more accurate at a fixed bpm.
 
 ## mp3-to-nbs v1.0.2-test 2026/6/3
 
