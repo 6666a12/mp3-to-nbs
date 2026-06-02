@@ -83,8 +83,8 @@ export const TRANSLATIONS = {
     sourceSeparation: {
       label: { zh: '音源分离', en: 'Source Separation' },
       description: {
-        zh: '将音频分离为鼓、贝斯、人声和其他声部后再分析。可提高乐器映射准确度，但耗时更长。',
-        en: 'Separate audio into drums, bass, vocals, and other stems before analysis. Improves instrument mapping accuracy but takes longer.',
+        zh: '使用 Demucs + MDX-Net + Wiener 掩膜将音频分离为鼓、贝斯、人声和其他声部。大幅提高乐器映射准确度，但耗时更长。',
+        en: 'Separate audio into drums, bass, vocals, and other stems using Demucs + MDX-Net + Wiener masks. Greatly improves instrument mapping accuracy but takes longer.',
       },
     },
     gpu: {
@@ -96,21 +96,6 @@ export const TRANSLATIONS = {
       warning: {
         zh: '⚠️ 警告：如果显卡配置不足（显存 < 4GB 或非 NVIDIA 显卡），GPU 加速可能导致程序崩溃或运行失败。不确定的话请保持关闭。',
         en: '⚠️ Warning: GPU acceleration may crash or fail if your GPU is insufficient (< 4GB VRAM or non-NVIDIA GPU). Leave off if unsure.',
-      },
-    },
-    quality: {
-      label: { zh: '质量', en: 'Quality' },
-      fast: {
-        label: { zh: '快速', en: 'Fast' },
-        desc: { zh: '处理更快，分离质量较低', en: 'Faster processing, lower separation quality' },
-      },
-      balanced: {
-        label: { zh: '均衡', en: 'Balanced' },
-        desc: { zh: '速度与质量的良好平衡', en: 'Good balance between speed and quality' },
-      },
-      high: {
-        label: { zh: '高质量', en: 'High' },
-        desc: { zh: '最高质量，处理较慢', en: 'Maximum quality, slower processing' },
       },
     },
   },

@@ -23,5 +23,10 @@
       "csp": null
     }
   },
+  "bundle": {
+    "resources": {
+      "../release/python/": "python/"
+    }
+  },
   "plugins": {}
 }

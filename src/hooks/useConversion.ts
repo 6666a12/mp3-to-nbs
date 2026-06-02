@@ -51,14 +51,17 @@ interface UseConversionReturn {
 }
 
 function readDefaultGpu(): boolean {
-  try { return localStorage.getItem('mp3-to-nbs-use-gpu') === 'true'; }
-  catch { return false; }
+  try {
+    const stored = localStorage.getItem('mp3-to-nbs-use-gpu');
+    if (stored !== null) return stored === 'true';
+    return true;  // GPU enabled by default
+  }
+  catch { return true; }
 }
 
 const DEFAULT_OPTIONS: ConversionOptions = {
   inputPath: '',
   sourceSeparation: true,
-  quality: 'balanced',
   useGpu: readDefaultGpu(),
 };
 

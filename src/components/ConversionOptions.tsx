@@ -5,8 +5,6 @@ import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
 } from '@/components/ui/card';
 import type { ConversionOptions } from '@/types/conversion';
-import type { TranslationLeaf } from '@/i18n/translations';
-import { QUALITY_OPTIONS } from '@/types/conversion';
 
 interface ConversionOptionsProps {
   options: ConversionOptions;
@@ -18,12 +16,6 @@ export function ConversionOptionsPanel({
   options, onChange, disabled = false,
 }: ConversionOptionsProps) {
   const { tl } = useLanguage();
-
-  const qualityDescriptions: Record<string, { label: TranslationLeaf; desc: TranslationLeaf }> = {
-    fast: { label: TRANSLATIONS.options.quality.fast.label, desc: TRANSLATIONS.options.quality.fast.desc },
-    balanced: { label: TRANSLATIONS.options.quality.balanced.label, desc: TRANSLATIONS.options.quality.balanced.desc },
-    high: { label: TRANSLATIONS.options.quality.high.label, desc: TRANSLATIONS.options.quality.high.desc },
-  };
 
   return (
     <Card>
@@ -100,34 +92,6 @@ export function ConversionOptionsPanel({
             )}
           </div>
         )}
-
-        {/* Quality selector */}
-        <div className="space-y-2">
-          <Label className="text-sm">{tl(TRANSLATIONS.options.quality.label)}</Label>
-          <div className="flex gap-2">
-            {QUALITY_OPTIONS.map((q) => (
-              <button
-                key={q.value}
-                type="button"
-                disabled={disabled}
-                onClick={() => onChange({ quality: q.value })}
-                className={`
-                  flex-1 rounded-md border px-3 py-1.5 text-sm font-medium
-                  transition-colors focus-visible:outline-none focus-visible:ring-2
-                  focus-visible:ring-ring disabled:opacity-50
-                  ${options.quality === q.value
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-input hover:bg-accent hover:text-accent-foreground'}
-                `}
-              >
-                {tl(qualityDescriptions[q.value].label)}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {tl(qualityDescriptions[options.quality].desc)}
-          </p>
-        </div>
 
       </CardContent>
     </Card>

@@ -2,14 +2,15 @@
 MP3-to-NBS Converter -- Main Entry Point.
 
 Called by the Rust backend via subprocess:
-  python converter.py <input_audio> --output-dir <dir> [options]
+  python converter.py <input_audio> --output-dir <dir> [--source-separation <bool>] [--use-gpu] [--tps <float>]
 
-Pipeline order (optimized):
+Pipeline:
   Step 1: Load audio
-  Step 2: Detect metadata (BPM, duration, key) EARLY — before expensive separation
-  Step 3: Source separation (optional, demucs)
-  Step 4: Beat tracking (uses BPM from step 2)
-  Step 5: Pitch detection per stem
+  Step 2: Detect metadata (BPM, duration)
+  Step 3: Source separation (optional):
+          Demucs 4-stem → MDX-Net vocals → Wiener masks → Compression → LUFS normalize
+  Step 4: Beat tracking
+  Step 5: Pitch detection per stem (HPSS on "other")
   Step 6: NBS generation
 
 Progress is reported as JSON lines on stdout (flush=True).
@@ -126,20 +127,17 @@ async def run_conversion(
     if options.source_separation:
         report_progress(
             "source_separation", 0.10,
-            f"Source separation starting ({options.quality} quality)...",
+            "Source separation starting (4-stem Demucs + MDX-Net + Wiener)...",
         )
 
         try:
-            quality_thresholds = {"fast": 0.50, "balanced": 0.55, "high": 0.60}
-            refine_threshold = quality_thresholds.get(options.quality, 0.82)
-
             with tempfile.TemporaryDirectory() as temp_dir:
                 separator = CascadedSourceSeparator(
                     temp_dir=temp_dir,
-                    refinement_threshold=refine_threshold,
                     use_gpu=options.use_gpu,
+                    use_advanced_vocals=options.use_advanced_separation,
                 )
-                stems = await separator.separate(input_path)
+                stems = await separator.cascade_separate(input_path)
 
             stem_list = ", ".join(sorted(stems.keys()))
             report_progress(
@@ -164,12 +162,12 @@ async def run_conversion(
         f"Beat tracking at {tempo_bpm:.1f} BPM...",
     )
 
-    beat_audio = stems.get("other", audio)
-    if beat_audio.size == 0:
-        beat_audio = audio.copy()
-
+    # Use FULL MIX for beat tracking — the full mix has the clearest
+    # rhythmic information.  Using a separated stem (especially "other"
+    # in 6-stem, which is just the residual after 5 main stems are
+    # extracted) produces wrong BPM (e.g. 241 instead of 192).
     final_bpm, final_tps, beat_frames = await detect_tempo_and_beats(
-        beat_audio, sample_rate
+        audio, sample_rate
     )
 
     # Use detected BPM unless user overrode
@@ -237,6 +235,46 @@ async def run_conversion(
                 min_note_length_ms=120.0,
                 noise_gate_db=-30.0,
             )
+        elif stem_name == "other":
+            # HPSS pre-separation: split "other" into harmonic and percussive
+            # components.  Synth pads/leads → harmonic; FX/risers → percussive.
+            # Each component gets its own detection pass with tuned parameters.
+            try:
+                import librosa
+
+                harm, perc = librosa.decompose.hpss(
+                    librosa.stft(stem_audio),
+                    kernel_size=31,
+                    margin=(1.0, 3.0),
+                )
+                harm_audio = librosa.istft(harm, length=len(stem_audio))
+                perc_audio = librosa.istft(perc, length=len(stem_audio))
+
+                # Harmonic pass: synth pads, leads, sustained tones
+                harm_events = await detect_pitches(
+                    harm_audio, sample_rate,
+                    onset_threshold=0.55,
+                    frame_threshold=0.40,
+                    min_note_length_ms=100.0,
+                )
+                # Percussive pass: FX hits, risers, noise bursts
+                perc_events = await detect_pitches(
+                    perc_audio, sample_rate,
+                    onset_threshold=0.35,
+                    frame_threshold=0.25,
+                    min_note_length_ms=40.0,
+                    minimum_frequency=80.0,
+                )
+                note_events = harm_events + perc_events
+                note_events.sort(key=lambda n: (n.start_time, n.pitch))
+            except Exception:
+                # HPSS fallback: use standard parameters
+                note_events = await detect_pitches(
+                    stem_audio, sample_rate,
+                    onset_threshold=0.60,
+                    frame_threshold=0.45,
+                    min_note_length_ms=120.0,
+                )
         else:
             note_events = await detect_pitches(
                 stem_audio, sample_rate,
@@ -358,16 +396,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable Demucs source separation (default: true).",
     )
     parser.add_argument(
-        "--quality", type=str, default="balanced",
-        choices=["fast", "balanced", "high"],
-        help="Conversion quality preset (default: balanced).",
-    )
-    parser.add_argument(
         "--tps", type=float, default=0.0,
         help="Ticks per second (0 = auto-detect, default: auto).",
     )
     parser.add_argument(
-        "--use-gpu", action="store_true", default=False,
+        "--use-gpu", action=argparse.BooleanOptionalAction, default=True,
         help="Enable GPU acceleration for Demucs source separation (requires CUDA).",
     )
     return parser
@@ -379,7 +412,6 @@ def main() -> None:
 
     options = ConversionOptions(
         source_separation=args.source_separation == "true",
-        quality=args.quality,
         tps=args.tps,
         use_gpu=args.use_gpu,
     )

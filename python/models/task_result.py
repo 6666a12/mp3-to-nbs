@@ -37,23 +37,6 @@ class NoteEvent(BaseModel):
     )
 
 
-class StemQuality(BaseModel):
-    """Quality assessment for a single separated stem."""
-
-    name: str = Field(..., description="Stem name (vocals, drums, bass, other)")
-    purity_score: float = Field(
-        default=0.5, ge=0.0, le=1.0, description="Overall purity score (0-1)"
-    )
-    spectral_leakage: float = Field(
-        default=0.0, ge=0.0, le=1.0, description="Spectral leakage amount"
-    )
-    temporal_bleed: float = Field(
-        default=0.0, ge=0.0, le=1.0, description="Temporal bleed amount"
-    )
-    needs_refinement: bool = Field(
-        default=False, description="Whether this stem needs secondary refinement"
-    )
-
 
 class ConversionOptions(BaseModel):
     """Options passed from the Rust frontend to the Python converter."""
@@ -61,11 +44,6 @@ class ConversionOptions(BaseModel):
     source_separation: bool = Field(
         default=True,
         description="Enable Demucs source separation before pitch detection",
-    )
-    quality: str = Field(
-        default="balanced",
-        pattern="^(fast|balanced|high)$",
-        description="Conversion quality: fast, balanced, or high",
     )
     tps: float = Field(
         default=0.0,
@@ -76,6 +54,10 @@ class ConversionOptions(BaseModel):
     use_gpu: bool = Field(
         default=False,
         description="Enable GPU acceleration for Demucs source separation (requires CUDA)",
+    )
+    use_advanced_separation: bool = Field(
+        default=True,
+        description="Enable MDX-Net vocal separation + Wiener mask + compression + LUFS",
     )
 
 

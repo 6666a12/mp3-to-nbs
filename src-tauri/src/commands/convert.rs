@@ -12,7 +12,6 @@ use crate::{AppError, AppState};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversionOptions {
     pub source_separation: bool,
-    pub quality: String,
     #[serde(default)]
     pub use_gpu: bool,
 }
@@ -84,8 +83,6 @@ pub async fn run_local_conversion(
     );
     args.push("--source-separation".to_string());
     args.push(options.source_separation.to_string());
-    args.push("--quality".to_string());
-    args.push(options.quality.clone());
     if options.use_gpu {
         args.push("--use-gpu".to_string());
     }

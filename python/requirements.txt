@@ -7,3 +7,5 @@ numpy>=1.24
 scipy>=1.11
 pydantic>=2.0
 imageio-ffmpeg>=0.5
+audio-separator>=0.35
+pyloudnorm>=0.2

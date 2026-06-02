@@ -51,6 +51,7 @@ const REQUIRED_PACKAGES: &[&str] = &[
     "scipy",
     "pydantic",
     "imageio_ffmpeg",
+    "pyloudnorm",
 ];
 
 // ---------------------------------------------------------------------------

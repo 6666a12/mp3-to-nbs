@@ -61,7 +61,6 @@ export async function runLocalConversion(
       inputPath: options.inputPath,
       options: {
         source_separation: options.sourceSeparation,
-        quality: options.quality,
         use_gpu: options.useGpu,
       },
     });

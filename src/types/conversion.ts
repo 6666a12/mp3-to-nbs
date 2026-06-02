@@ -10,7 +10,6 @@ export interface EnvCheckResult {
 export interface ConversionOptions {
   inputPath: string;
   sourceSeparation: boolean;
-  quality: 'fast' | 'balanced' | 'high';
   /** Enable GPU acceleration for Demucs source separation (requires CUDA-compatible GPU). */
   useGpu: boolean;
 }
@@ -58,9 +57,3 @@ export const PIPELINE_STEPS = [
   { key: 'complete', label: 'Complete' },
 ] as const;
 
-/** Quality option labels */
-export const QUALITY_OPTIONS = [
-  { value: 'fast' as const, label: 'Fast' },
-  { value: 'balanced' as const, label: 'Balanced' },
-  { value: 'high' as const, label: 'High' },
-];

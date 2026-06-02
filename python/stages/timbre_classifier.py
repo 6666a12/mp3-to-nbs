@@ -167,6 +167,37 @@ def _extract_segment_features(
         rms = librosa.feature.rms(y=segment, frame_length=n_fft, hop_length=n_fft // 4)[0]
         rms_energy = float(np.mean(rms))
 
+        # ---- Spectral spread (bandwidth around centroid) ----
+        # High → wide-band synth pad; Low → focused acoustic instrument
+        spread = librosa.feature.spectral_bandwidth(
+            y=segment, sr=sample_rate, n_fft=n_fft, hop_length=n_fft // 4
+        )[0]
+        spectral_spread = float(np.mean(spread))
+
+        # ---- Spectral flux (frame-to-frame magnitude change rate) ----
+        # High → filter sweep / FX; Low → steady sustained tone
+        spec_mag = np.abs(librosa.stft(
+            segment, n_fft=n_fft, hop_length=n_fft // 4
+        ))
+        if spec_mag.shape[1] >= 2:
+            diff = np.diff(spec_mag, axis=1)
+            flux = np.mean(np.abs(diff), axis=0)
+            spectral_flux = float(np.mean(flux)) / (float(np.mean(spec_mag)) + 1e-10)
+        else:
+            spectral_flux = 0.01
+
+        # ---- Sub-harmonic energy ratio (energy below fundamental / total) ----
+        # High → synth bass with sub oscillator; Low → natural bass
+        n_bins_mag = mag_mean.shape[0]
+        # Estimate fundamental bin (~bin 2-3 for typical notes)
+        fund_bin = 2
+        if fund_bin < n_bins_mag:
+            sub_energy = float(np.sum(mag_mean[:fund_bin]))
+            total_energy = float(np.sum(mag_mean)) + 1e-10
+            sub_harmonic_ratio = sub_energy / total_energy
+        else:
+            sub_harmonic_ratio = 0.1
+
     except Exception:
         # Fallback: heuristic features from raw waveform
         centroid_hz = 1000.0
@@ -175,6 +206,9 @@ def _extract_segment_features(
         zcr_val = float(np.mean(np.abs(np.diff(np.sign(segment)))) > 0) / 2.0
         odd_ratio = 0.5
         rms_energy = float(np.sqrt(np.mean(segment ** 2)))
+        spectral_spread = 2000.0
+        spectral_flux = 0.05
+        sub_harmonic_ratio = 0.1
 
     return {
         "centroid": centroid_hz,
@@ -183,6 +217,9 @@ def _extract_segment_features(
         "zcr": zcr_val,
         "odd_ratio": odd_ratio,
         "rms_energy": rms_energy,
+        "spread": spectral_spread,
+        "flux": spectral_flux,
+        "sub_harmonic": sub_harmonic_ratio,
     }
 
 
@@ -193,13 +230,23 @@ def _extract_segment_features(
 def _classify_single(features: Dict[str, float]) -> int:
     """Classify a single note's spectral features to an NBS instrument (0–15).
 
-    Decision tree (order matters — most discriminative features first):
+    Decision tree (order matters — most discriminative features first).
+
+    New synth-aware branches detect:
+      - Synth bass (sub-harmonic rich, low centroid)
+      - Filter sweep / FX (high spectral flux)
+      - Synth pad (wide bandwidth, slow evolution)
+      - Synth lead (bright, odd-harmonic dominant saw wave)
     """
     centroid = features["centroid"]
     flatness = features["flatness"]
     zcr = features["zcr"]
     odd_ratio = features["odd_ratio"]
     rolloff = features["rolloff"]
+    # New synth-related features (may be absent from older callers)
+    spread = features.get("spread", 2000.0)
+    flux = features.get("flux", 0.05)
+    sub_harmonic = features.get("sub_harmonic", 0.1)
 
     # ── 1. Very noisy / percussive → percussion family ──
     if flatness > 0.28:
@@ -213,12 +260,23 @@ def _classify_single(features: Dict[str, float]) -> int:
         else:
             return 4  # Click/Hat
 
-    # ── 2. Low register → bass ──
+    # ── 1b. Filter sweep / riser FX → Didgeridoo + Bit layer ──
+    if flux > 0.30 and sub_harmonic > 0.10:
+        return 12  # Didgeridoo (evolving timbre, closest to filter sweep)
+
+    # ── 2. Synth Bass: low + strong sub-harmonic + some noise ──
     if centroid < 500.0:
-        return 1  # Double Bass
+        if sub_harmonic > 0.15 and flatness > 0.06:
+            return 1  # Double Bass (layer with Bit via DUAL_INSTRUMENT_RULES)
+        else:
+            return 1  # Double Bass
 
     # ── 3. Low-mid register — distinguish plucked vs blown vs struck ──
     if centroid < 2000.0:
+        # Synth pad in low-mid: wide bandwidth, low flux (steady)
+        if spread > 2000.0 and flux < 0.15:
+            return 12  # Didgeridoo (sustained evolving, closest to pad)
+
         if odd_ratio > 0.55:
             # Strong odd harmonics → reed/brass quality
             if flatness < 0.08:
@@ -234,6 +292,10 @@ def _classify_single(features: Dict[str, float]) -> int:
 
     # ── 4. High register (>4000 Hz) ──
     if centroid > 5000.0:
+        # Synth lead: very bright, strong odd harmonics (saw wave character)
+        if odd_ratio > 0.65 and flatness > 0.04 and flatness < 0.15:
+            return 13  # Bit (chiptune/square → closest to saw lead)
+
         # Very bright — keep Chime for the purest tones only
         if flatness < 0.04:
             return 8  # Chime (crystalline)
@@ -244,7 +306,15 @@ def _classify_single(features: Dict[str, float]) -> int:
         else:
             return 13  # Bit (synth)
     else:
-        # ── 5. Mid-high register (2000–4000 Hz) ──
+        # ── 5. Mid-high register (2000–5000 Hz) ──
+        # Synth pad: wide bandwidth, moderate centroid, slow evolution
+        if spread > 2500.0 and flux < 0.15 and centroid > 2500.0:
+            return 12  # Didgeridoo (sustained pad character)
+
+        # Synth lead: bright, odd-harmonic heavy
+        if odd_ratio > 0.65 and centroid > 3000.0 and flatness > 0.04:
+            return 13  # Bit (synth lead character)
+
         # Spread across instruments — Harp/Guitar/Flute as defaults
         if odd_ratio > 0.55:
             if flatness < 0.07:
